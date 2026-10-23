@@ -12,6 +12,7 @@ STYX Shell is a single-file, browser-based terminal (web shell) written in PHP. 
 - Busy-state protection: while a long-running command is executing, the input is disabled and marked with a blinking `running…` indicator, preventing accidental command stacking.
 - Pre-flight check: on page load, the terminal verifies that at least one command-execution function is available; if none are (e.g. `disable_functions`), a blocking warning is shown with a "Continue anyway" button.
 - Optional HTTP Basic authentication.
+- Hard per-command timeout (`timeout` in `$SHELL_CONFIG`, default 300s): a runaway command is killed via SIGTERM (children included) and the request returns with a notice, so it cannot tie up a server worker forever.
 - UTF-8-safe output rendering.
 
 ## Requirements
@@ -49,6 +50,7 @@ $SHELL_CONFIG = array(
 | `username` | Fallback display name. Overridden automatically by the running OS user.    |
 | `hostname` | Fallback display name. Overridden automatically by the machine's hostname. |
 | `password` | Plain text password for HTTP Basic authentication. Empty string disables authentication. |
+| `timeout`  | Hard cap (seconds) per command; `0` disables the cap. On timeout the command is SIGTERMed (children included) and the request returns with a notice. Default `300`. |
 
 Example hardening:
 
@@ -63,7 +65,7 @@ When a password is set, the browser will prompt once; all subsequent page and XH
 | Action                    | How                                                              |
 |---------------------------|------------------------------------------------------------------|
 | Run a command             | Type it and press **Enter** (stderr is merged into stdout automatically). |
-| Interrupt a command       | **Ctrl+C** (or **Cmd+C**) while a command is running sends an interrupt. Only available when `proc_open` is enabled and the server can process concurrent requests (Apache / nginx+FPM; not PHP's built-in single-threaded server). |
+| Interrupt a command       | **Ctrl+C** (or **Cmd+C**) while a command is running sends an interrupt. Only available when `proc_open` **and** `posix` are enabled, and the server can process concurrent requests (Apache / nginx+FPM; not PHP's built-in single-threaded server). |
 | Change directory          | `cd /var/log` — supports paths with spaces (`cd my folder`), quoted paths (`cd "my folder"`), and `~` / `~user` expansion. |
 | Tab completion            | **Tab** completes a command name; after a command, completes file/folder names. Multiple candidates are listed. |
 | Command history           | **Arrow Up / Arrow Down** cycles through previous commands.       |

