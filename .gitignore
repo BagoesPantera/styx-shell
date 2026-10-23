@@ -1,0 +1,102 @@
+# ==========================================
+# Operating System Files
+# ==========================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.stackdump
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.trash-*
+
+# ==========================================
+# Editors & IDEs
+# ==========================================
+# VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# JetBrains / PhpStorm / WebStorm / IntelliJ
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Sublime Text & Vim
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# ==========================================
+# Logs & Databases
+# ==========================================
+*.log
+logs/
+*.sqlite
+*.sqlite3
+
+# ==========================================
+# Environment & Secrets (SANGAT PENTING)
+# ==========================================
+.env
+.env.*
+!.env.example
+!.env.testing
+*.pem
+*.key
+*.p12
+*.pfx
+
+# ==========================================
+# Common Dependencies & Build Outputs
+# ==========================================
+# Node / Frontend
+node_modules/
+dist/
+build/
+out/
+.next/
+.nuxt/
+
+# PHP / Composer
+vendor/
+.phpunit.result.cache
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Java / Kotlin
+*.class
+target/
+.gradle/
+
+# Temp & Cache
+tmp/
+temp/
+.cache/
