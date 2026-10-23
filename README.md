@@ -10,6 +10,7 @@ STYX Shell is a single-file, browser-based terminal (web shell) written in PHP. 
 - Command history via **Arrow Up / Arrow Down**.
 - Built-in file upload (`upload <path>`) and download (`download <path>`).
 - Busy-state protection: while a long-running command is executing, the input is disabled and marked with a blinking `running…` indicator, preventing accidental command stacking.
+- Pre-flight check: on page load, the terminal verifies that at least one command-execution function is available; if none are (e.g. `disable_functions`), a blocking warning is shown with a "Continue anyway" button.
 - Optional HTTP Basic authentication.
 - UTF-8-safe output rendering.
 

