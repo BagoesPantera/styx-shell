@@ -69,7 +69,7 @@ function getExecuteFunctionName() {
     return null;
 }
 
-function executeCommand($cmd) {
+function executeCommand($cmd, &$proc = null) {
     $output = '';
     switch (getExecuteFunctionName()) {
         case 'exec':
@@ -98,6 +98,9 @@ function executeCommand($cmd) {
             break;
         case 'proc_open':
             $handle = proc_open($cmd, array(0 => array('pipe', 'r'), 1 => array('pipe', 'w')), $pipes);
+            if ($proc !== null) {
+                $proc = $handle;
+            }
             $output = stream_get_contents($pipes[1]);
             proc_close($handle);
             break;
@@ -124,7 +127,8 @@ function featureShell($cmd, $cwd) {
         return featureDownload($match[1]);
     } else {
         @chdir($cwd);
-        $stdout = executeCommand($cmd);
+        $GLOBALS['SHELL_PROC'] = null;
+        $stdout = executeCommand($cmd, $GLOBALS['SHELL_PROC']);
     }
 
     return array(
@@ -237,6 +241,18 @@ if (isset($_GET["feature"])) {
             break;
         case 'upload':
             $response = featureUpload($_POST['path'], $_POST['file'], $_POST['cwd']);
+            break;
+        case 'kill':
+            $proc = isset($GLOBALS['SHELL_PROC']) ? $GLOBALS['SHELL_PROC'] : null;
+            // ponytail: only proc_open-based commands are interruptible; under single-threaded php -S the kill request arrives too late
+            if ($proc !== null) {
+                @proc_terminate($proc);
+            }
+            $response = array(
+                'stdout' => base64_encode($proc !== null ? '' : 'Nothing to interrupt (command not interruptible).'),
+                'cwd' => base64_encode(getcwd())
+            );
+            break;
     }
 
     header("Content-Type: application/json");
@@ -699,6 +715,22 @@ if (isset($_GET["feature"])) {
                 };
                 xhr.send(getQueryString());
             }
+
+            document.addEventListener("keydown", function (event) {
+                if (!busy) {
+                    return;
+                }
+                if ((event.ctrlKey || event.metaKey) && (event.key === "c" || event.key === "C")) {
+                    event.preventDefault();
+                    makeRequest("?feature=kill", {}, function (response) {
+                        _insertStdout("^C");
+                        var text = decodeB64(response.stdout);
+                        if (text) {
+                            _insertStdout(text + "\n");
+                        }
+                    });
+                }
+            });
 
             document.onclick = function(event) {
                 event = event || window.event;

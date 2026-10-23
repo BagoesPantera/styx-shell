@@ -63,6 +63,7 @@ When a password is set, the browser will prompt once; all subsequent page and XH
 | Action                    | How                                                              |
 |---------------------------|------------------------------------------------------------------|
 | Run a command             | Type it and press **Enter** (stderr is merged into stdout automatically). |
+| Interrupt a command       | **Ctrl+C** (or **Cmd+C**) while a command is running sends an interrupt. Only available when `proc_open` is enabled and the server can process concurrent requests (Apache / nginx+FPM; not PHP's built-in single-threaded server). |
 | Change directory          | `cd /var/log` — supports paths with spaces (`cd my folder`), quoted paths (`cd "my folder"`), and `~` / `~user` expansion. |
 | Tab completion            | **Tab** completes a command name; after a command, completes file/folder names. Multiple candidates are listed. |
 | Command history           | **Arrow Up / Arrow Down** cycles through previous commands.       |
